@@ -1,0 +1,111 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  amazon-apigateway-amazon-s3-upload
+Globals:
+  Api:
+    OpenApiVersion: 3.0.1
+Resources:
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: Private
+  ApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+      - PolicyName: ApiS3PutPolicy
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+              Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref Bucket
+                - /*
+
+  Api:
+    Type: AWS::Serverless::Api
+    Properties:
+      Auth:
+        ApiKeyRequired: true
+        UsagePlan:
+          CreateUsagePlan: PER_API
+      StageName: prod
+      TracingEnabled: true
+      Variables:
+        prefix: PREFIX_
+        bucket: !Ref Bucket
+        extension: .json
+      DefinitionBody:
+        openapi: 3.0.1
+        info:
+          title: amazon-apigateway-amazon-s3-upload
+        paths:
+          /:
+            post:
+              responses:
+                "500":
+                  description: "500 response"
+                  content: 
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+                "200":
+                  description: 200 response
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              x-amazon-apigateway-integration:
+                credentials: !GetAtt ApiRole.Arn
+                httpMethod: PUT
+                uri: arn:aws:apigateway:us-east-1:s3:path/{bucket}/{object}
+                responses:
+                  "200":
+                    statusCode: 200
+                  default:
+                    statusCode: 500
+                    responseTemplates:
+                      text/xml: "#set($inputRoot = $input.path('$'))"
+                      application/json: "#set($inputRoot = $input.path('$'))"
+                requestTemplates:
+                  application/json: "\
+                    #set($prefix = $stageVariables.prefix)\n\
+                    #set($requestId = $context.requestId)\n\
+                    #set($timeepoch = \"_$context.requestTimeEpoch\")\n\
+                    #set($extension = $stageVariables.extension)\n\
+                    #set($context.requestOverride.path.object = \"$prefix$timeepoch$requestId$extension\")\n\
+                    #set($context.requestOverride.path.bucket = $stageVariables.bucket)\n\
+                    $input.json('$')"
+                passthroughBehavior: never
+                type: aws
+        components:
+          schemas:
+            Empty:
+              title: Empty Schema
+              type: object
+Outputs:
+  ApiEndpoint:
+    Description: API Endpoint
+    Value: !Sub "https://${Api}.execute-api.${AWS::Region}.amazonaws.com/prod/"
+  S3Bucket:
+    Description: S3 Bucket
+    Value: !Ref Bucket
+  APIKey:
+    Description: API Key
+    Value: !Sub "${Api.ApiKey}"
