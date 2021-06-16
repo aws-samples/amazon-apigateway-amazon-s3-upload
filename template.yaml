@@ -10,6 +10,12 @@ Resources:
     Type: AWS::S3::Bucket
     Properties: 
       AccessControl: Private
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
   ApiRole:
     Type: AWS::IAM::Role
     Properties:
